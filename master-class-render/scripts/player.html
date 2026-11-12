@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { --ink:#212529; --muted:#868e96; --accent:#3b5bdb; --paper:#fffdf7; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif; background:#f1efe9; color:var(--ink); height:100vh; display:flex; }
+  main { flex:1; display:flex; flex-direction:column; min-width:0; }
+  header { padding:10px 18px; display:flex; gap:12px; align-items:baseline; }
+  header .course { color:var(--muted); font-size:13px; }
+  header h1 { font-size:18px; margin:0; font-weight:650; }
+  #stage { flex:1; margin:0 18px; background:var(--paper); border-radius:14px; box-shadow:0 1px 3px #0002; position:relative; overflow:hidden; }
+  #stage .frame { position:absolute; inset:0; padding:22px; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity .5s; }
+  #stage .frame.on { opacity:1; }
+  #stage .frame > svg { width:100%; height:100%; }
+  .d2-svg > rect:first-child { fill: transparent !important; }
+  g.hid { opacity:0; }
+  g.vis { opacity:1; transition: opacity .45s ease; }
+  g.pop { animation: pop 1.6s ease; }
+  @keyframes pop { 0% { filter: drop-shadow(0 0 0 #fab005); } 25% { filter: drop-shadow(0 0 9px #fab005); } 100% { filter: drop-shadow(0 0 0 #fab005); } }
+  #chapterTitle { position:absolute; top:12px; left:16px; font-size:13px; color:var(--muted); z-index:2; background:#fffdf7cc; padding:2px 8px; border-radius:6px; }
+  #cap { min-height:64px; margin:10px 18px 0; font-size:20px; line-height:1.4; text-align:center; display:flex; align-items:center; justify-content:center; }
+  #cap.think { color:var(--accent); font-weight:600; }
+  #cap.hidden { visibility:hidden; }
+  #bar { margin:6px 18px 0; height:8px; background:#dee2e6; border-radius:4px; position:relative; cursor:pointer; }
+  #fill { position:absolute; inset:0 auto 0 0; background:var(--accent); border-radius:4px; width:0; }
+  .tick { position:absolute; top:-3px; width:2px; height:14px; background:#adb5bd; }
+  #controls { display:flex; gap:10px; align-items:center; padding:10px 18px 14px; font-size:14px; }
+  button, select { font:inherit; border:1px solid #ced4da; background:white; border-radius:8px; padding:5px 11px; cursor:pointer; }
+  button.primary { background:var(--accent); color:white; border-color:var(--accent); min-width:84px; }
+  #time { color:var(--muted); font-variant-numeric:tabular-nums; }
+  aside { width:270px; background:white; border-left:1px solid #e9ecef; overflow:auto; padding:12px 0; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 16px 8px; }
+  aside a { display:block; padding:7px 16px; font-size:14px; color:var(--ink); text-decoration:none; border-left:3px solid transparent; }
+  aside a.cur { border-left-color:var(--accent); background:#edf2ff; font-weight:600; }
+  #start { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:#fffdf7ee; z-index:3; cursor:pointer; flex-direction:column; gap:10px; }
+  #start b { font-size:28px; } #start span { color:var(--muted); }
+  .hide-aside aside { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <header><a href="index.html" style="color:var(--accent);text-decoration:none;font-size:14px">← Course</a><h1 id="title"></h1><span class="course" id="course"></span></header>
+  <div id="stage"><div id="chapterTitle"></div><div id="start"><b>▶ Play</b><span id="dur"></span></div></div>
+  <div id="cap"></div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="controls">
+    <button class="primary" id="play">▶ Play</button>
+    <button id="prev" title="Previous beat ([)">⏮</button>
+    <button id="back" title="Back 10s (←)">↺ 10</button>
+    <button id="fwd" title="Forward 10s (→)">10 ↻</button>
+    <button id="next" title="Next beat (])">⏭</button>
+    <span id="time">0:00 / 0:00</span>
+    <span style="flex:1"></span>
+    <select id="rate"><option>0.85</option><option selected>1</option><option>1.15</option><option>1.3</option><option>1.5</option></select>
+    <button id="cc" title="Captions (c)">CC</button>
+    <button id="toc" title="Chapters">☰</button>
+  </div>
+</main>
+<aside><h2>Beats</h2><nav id="chapters"></nav></aside>
+<audio id="audio" preload="auto" src="data:audio/mpeg;base64,__AUDIO__"></audio>
+<script>
+const D = __DATA__;
+const $ = id => document.getElementById(id);
+const audio = $('audio');
+$('title').textContent = D.title; $('course').textContent = D.course;
+const fmt = s => `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+$('dur').textContent = fmt(D.duration);
+
+const frames = D.svgs.map(svg => { const f = document.createElement('div'); f.className = 'frame'; f.innerHTML = svg; $('stage').appendChild(f); return f; });
+const groups = frames.map(f => { const m = new Map(); f.querySelectorAll('g[class]').forEach(g => { const c = g.getAttribute('class').split(/\s+/)[0]; if (c !== 'shape' && /^[A-Za-z0-9+/]+=*$/.test(c)) { (m.get(c) || m.set(c, []).get(c)).push(g); } }); return m; });
+frames.forEach((f, i) => groups[i].forEach(gs => gs.forEach(g => g.classList.add('hid'))));
+
+D.chapters.forEach((c, i) => {
+  const a = document.createElement('a'); a.href = '#'; a.textContent = c.title; a.onclick = e => { e.preventDefault(); seek(c.t + 0.01); };
+  $('chapters').appendChild(a);
+  const tk = document.createElement('div'); tk.className = 'tick'; tk.style.left = (100 * c.t / D.duration) + '%'; $('bar').appendChild(tk);
+});
+
+const last = (arr, t) => { let r = -1; for (let i = 0; i < arr.length && arr[i].t <= t + 1e-3; i++) r = i; return r; };
+let curStep = -2, curCap = -2, curCh = -2, curFrame = -1, shown = new Set();
+
+function render(t) {
+  const si = last(D.steps, t);
+  if (si !== curStep) {
+    const st = D.steps[si];
+    const fi = st ? st.svg : -1;
+    if (fi !== curFrame) { frames.forEach((f, i) => f.classList.toggle('on', i === fi)); shown = new Set(); curFrame = fi; }
+    if (st) {
+      const want = new Set(st.ids);
+      groups[fi].forEach((gs, id) => gs.forEach(g => {
+        const on = want.has(id);
+        g.classList.toggle('hid', !on); g.classList.toggle('vis', on);
+        if (on && !shown.has(id) && si === curStep + 1 && shown.size) { g.classList.remove('pop'); void g.offsetWidth; g.classList.add('pop'); }
+      }));
+      shown = want;
+    }
+    curStep = si;
+  }
+  const ci = last(D.captions, t);
+  if (ci !== curCap) { const c = D.captions[ci]; $('cap').textContent = c ? c.text : ''; $('cap').classList.toggle('think', !!(c && c.think)); curCap = ci; }
+  const hi = last(D.chapters, t);
+  if (hi !== curCh) { [...$('chapters').children].forEach((a, i) => a.classList.toggle('cur', i === hi)); $('chapterTitle').textContent = hi >= 0 ? D.chapters[hi].title : ''; curCh = hi; }
+  $('fill').style.width = (100 * t / D.duration) + '%';
+  $('time').textContent = `${fmt(t)} / ${fmt(D.duration)}`;
+}
+function seek(t) { audio.currentTime = Math.max(0, Math.min(D.duration, t)); curStep = -2; shown = new Set(); render(audio.currentTime); }
+function toggle() { $('start').style.display = 'none'; audio.paused ? audio.play() : audio.pause(); }
+audio.onplay = () => $('play').textContent = '⏸ Pause';
+audio.onpause = () => $('play').textContent = '▶ Play';
+(function loop() { render(audio.currentTime); requestAnimationFrame(loop); })();
+
+const beat = d => { const i = last(D.chapters, audio.currentTime - (d < 0 ? 1.5 : 0)) + d; if (D.chapters[i]) seek(D.chapters[i].t + 0.01); };
+$('play').onclick = toggle; $('start').onclick = toggle;
+$('back').onclick = () => seek(audio.currentTime - 10); $('fwd').onclick = () => seek(audio.currentTime + 10);
+$('prev').onclick = () => beat(-1); $('next').onclick = () => beat(1);
+$('rate').onchange = e => audio.playbackRate = +e.target.value;
+$('cc').onclick = () => $('cap').classList.toggle('hidden');
+$('toc').onclick = () => document.body.classList.toggle('hide-aside');
+$('bar').onclick = e => { const r = $('bar').getBoundingClientRect(); seek(D.duration * (e.clientX - r.left) / r.width); };
+document.onkeydown = e => {
+  if (e.target.tagName === 'SELECT') return;
+  if (e.key === ' ') { e.preventDefault(); toggle(); }
+  else if (e.key === 'ArrowLeft') seek(audio.currentTime - 10);
+  else if (e.key === 'ArrowRight') seek(audio.currentTime + 10);
+  else if (e.key === '[') beat(-1); else if (e.key === ']') beat(1);
+  else if (e.key === 'c') $('cap').classList.toggle('hidden');
+};
+render(0);
+</script>
+</body>
+</html>
